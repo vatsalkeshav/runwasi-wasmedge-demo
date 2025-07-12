@@ -29,8 +29,6 @@ jobs:
       - name: Install plugin
         run: |
           curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- --plugins wasi_nn-ggml -v 0.14.1
-          source ~/.bashrc
-          which wasmedge # verify installation
           
       - name: Install containerd-shim-wasmedge-v1
         run: |
