@@ -26,11 +26,11 @@ jobs:
           target: wasm32-wasip1
           cache: false
 
-      - name: Install plugin
+      - name: Install WasmEdge with WASI-NN plugin
         run: |
           curl -sSf https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install.sh | bash -s -- --plugins wasi_nn-ggml -v 0.14.1
           
-      - name: Install containerd-shim-wasmedge-v1
+      - name: Build and install Runwasi's containerd-shim-wasmedge-v1
         run: |
           cd $HOME
           git clone https://github.com/containerd/runwasi.git
@@ -41,13 +41,13 @@ jobs:
           source ~/.bashrc
           which containerd-shim-wasmedge-v1 # verify installation
 
-      - name: Install k3s (Kubernetes lightweight)
+      - name: Install k3s
         run: |
           cd $HOME
           curl -sfL https://get.k3s.io | sh -
           sudo chmod 777 /etc/rancher/k3s/k3s.yaml # hack
 
-      - name: Build the llama-api-server image and import it to k3s' containerd
+      - name: Build LlamaEdge's llama-api-server.wasm
         run: |
           cd $GITHUB_WORKSPACE
 
@@ -60,6 +60,8 @@ jobs:
 
           OPT_PROFILE=release RUSTFLAGS="--cfg wasmedge --cfg tokio_unstable" make apps/llamaedge/llama-api-server
 
+      - name: Build the llama-api-server.wasm's OCI image and import it to k3s' containerd
+        run: |
           cd apps/llamaedge/llama-api-server
           oci-tar-builder --name llama-api-server \
             --repo ghcr.io/second-state \
@@ -79,32 +81,22 @@ jobs:
 
       - name: Create and apply Kubernetes deployment
         run: |
-          sudo k3s kubectl apply -f $GITHUB_WORKSPACE/k3s_deployment.yaml
-          sleep 3
+          sudo k3s kubectl apply -f $GITHUB_WORKSPACE/k3s/k3s_deployment.yaml
+          sleep 20
           sudo k3s kubectl get pods
 
       # - name: Start tmate session (SSH)
       #   uses: mxschmitt/action-tmate@v3
 
-      - name: Get Pod Name
-        id: get-pod
+      - name: Port-forward from k3s in background
         run: |
-          sleep 10
-          sudo k3s kubectl get pods
-          POD_NAME=$(sudo k3s kubectl get pods -l app=llama-api-server --no-headers -o custom-columns=":metadata.name" | head -n 1)
-          echo "POD_NAME=$POD_NAME" >> $GITHUB_ENV
-
-      - name: Port-forward in background
-        run: |
-          sleep 10
           sudo k3s kubectl port-forward svc/llama-api-server-service 8080:8080 > /dev/null 2>&1 &
           PF_PID=$!
           echo "Port-forward PID: $PF_PID"
           echo "PORTER_PID=$PF_PID" >> $GITHUB_ENV
-          echo "Waiting for port-forward to be ready..."
-          sleep 10
+          sleep 6
       
-      - name: Test API endpoint and Save Output to logs
+      - name: Test API endpoint and log the output
         run: |
           mkdir -p logs
           curl -X POST http://localhost:8080/v1/chat/completions \
@@ -120,7 +112,9 @@ jobs:
       
       - name: Display and save pod logs
         run: |
-          sleep 30
+          sudo k3s kubectl get pods
+          POD_NAME=$(sudo k3s kubectl get pods -l app=llama-api-server --no-headers -o custom-columns=":metadata.name" | head -n 1)
+          echo "POD_NAME=$POD_NAME" >> $GITHUB_ENV
           sudo k3s kubectl logs ${{ env.POD_NAME }}
           sudo k3s kubectl logs ${{ env.POD_NAME }} > "logs/pod_logs_$(date +'%Y-%m-%d').log"
 
