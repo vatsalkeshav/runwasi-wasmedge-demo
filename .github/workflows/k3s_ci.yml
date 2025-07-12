@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+
 name: k3s llama-api-server CI
 
 on:
@@ -84,10 +86,7 @@ jobs:
           sudo k3s kubectl apply -f $GITHUB_WORKSPACE/k3s/k3s_deployment.yaml
           sleep 20
           sudo k3s kubectl get pods
-
-      # - name: Start tmate session (SSH)
-      #   uses: mxschmitt/action-tmate@v3
-
+          
       - name: Port-forward from k3s in background
         run: |
           sudo k3s kubectl port-forward svc/llama-api-server-service 8080:8080 > /dev/null 2>&1 &
@@ -112,12 +111,11 @@ jobs:
       
       - name: Display and save pod logs
         run: |
-          sudo k3s kubectl get pods
           POD_NAME=$(sudo k3s kubectl get pods -l app=llama-api-server --no-headers -o custom-columns=":metadata.name" | head -n 1)
           echo "POD_NAME=$POD_NAME" >> $GITHUB_ENV
-          sudo k3s kubectl logs ${{ env.POD_NAME }}
-          sudo k3s kubectl logs ${{ env.POD_NAME }} > "logs/pod_logs_$(date +'%Y-%m-%d').log"
-
+          sudo k3s kubectl logs $POD_NAME
+          sudo k3s kubectl logs $POD_NAME > "logs/pod_logs_$(date +'%Y-%m-%d').log"
+          
       - name: Upload Logs as Artifact
         uses: actions/upload-artifact@v4
         with:
